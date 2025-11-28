@@ -317,75 +317,95 @@
             };
 
             const processExtractedText = (text) => {
-                const lines = text.split('\n');
+                // Remove quebras de linha e caracteres de controle, mantendo espaços simples
+                const cleanText = text.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ');
+
+                // Regex para encontrar telefones no formato (XX)XXXX-XXXX ou (XX)XXXXX-XXXX
+                // Ex: (44)99834-8070, (44)99733-3537
+                const phoneRegex = /\(\d{2}\)\s?9?\d{4}[-\s]?\d{4}/g;
+
+                let match;
                 let addedCount = 0;
                 const newContacts = [];
                 const seenPhones = new Set(contacts.map(c => c.phone));
 
-                lines.forEach(line => {
-                    // 1. Filtro de Situação: Excluir Transferido ou Remanejado
-                    if (line.match(/transferido|remanejado/i)) {
-                        return; // Ignora esta linha
+                while ((match = phoneRegex.exec(cleanText)) !== null) {
+                    const rawPhone = match[0];
+                    const index = match.index;
+                    
+                    // 1. Verificar Situação (OLHAR PARA FRENTE)
+                    // No relatório padrão, a "Situação" (Transferido/Remanejado/Matriculado) 
+                    // vem depois do telefone e do RG.
+                    // Vamos pegar um trecho de texto após o telefone para verificar.
+                    // Exemplo do PDF: ... (44)99733-3537 ... Transferido
+                    const lookAhead = cleanText.substring(index + rawPhone.length, index + 200).toLowerCase();
+                    
+                    // Se encontrar "Transferido" ou "Remanejado" próximo ao telefone, ignoramos.
+                    // Limitamos a busca até a próxima data (que seria a data de matrícula) para não pegar a situação do próximo aluno.
+                    const nextDateIndex = lookAhead.search(/\d{2}\/\d{2}\/\d{4}/);
+                    const statusCheck = nextDateIndex !== -1 ? lookAhead.substring(0, nextDateIndex) : lookAhead;
+
+                    if (statusCheck.includes('transferido') || statusCheck.includes('remanejado')) {
+                        console.log(`Ignorado (Situação): Telefone ${rawPhone}`);
+                        continue; 
                     }
 
-                    // 2. Busca Telefone na linha
-                    const phoneMatch = line.match(/[\d\+\-\(\)\s]{10,}/);
+                    // 2. Extrair Nome (OLHAR PARA TRÁS)
+                    // No relatório padrão: [CGM] [NOME] [DATA NASC] ... [TELEFONE]
+                    // A "Data de Nascimento" é a âncora mais forte antes do telefone.
                     
-                    if (phoneMatch) {
-                        const rawPhone = phoneMatch[0];
-                        const cleanPhone = rawPhone.replace(/\D/g, '');
+                    // Pegamos o texto antes do telefone
+                    const textBefore = cleanText.substring(Math.max(0, index - 300), index);
+                    
+                    // Procuramos todas as datas (DD/MM/AAAA) nesse trecho anterior
+                    const dateMatches = [...textBefore.matchAll(/(\d{2}\/\d{2}\/\d{4})/g)];
+                    
+                    let extractedName = "Importado";
 
-                        if (cleanPhone.length >= 10 && cleanPhone.length <= 13) {
-                            if (!seenPhones.has(cleanPhone)) {
-                                
-                                // 3. Extração Inteligente do Nome
-                                // Estrutura: [CGM] [Nome] [Data Nasc] [Idade] [Sexo] [Telefone] ...
-                                
-                                let possibleName = "";
-
-                                // Pega tudo que está à ESQUERDA do telefone encontrado
-                                const leftSide = line.substring(0, line.indexOf(rawPhone));
-                                
-                                // Divide pela Data de Nascimento (Formato DD/MM/AAAA)
-                                // O nome deve ser a parte antes da data
-                                const parts = leftSide.split(/\d{2}\/\d{2}\/\d{4}/);
-                                
-                                if (parts.length > 0) {
-                                    // Pega a primeira parte (Antes da data)
-                                    let namePart = parts[0];
-                                    
-                                    // Remove o N. CGM (números no início da linha)
-                                    possibleName = namePart.replace(/^\d+/, '').trim();
-                                    
-                                    // Limpeza final de caracteres especiais
-                                    possibleName = possibleName.replace(/[^\w\sÀ-ÿ]/g, '').trim();
-                                }
-
-                                // Fallback: Se a extração falhou (nome vazio), usa lógica antiga
-                                if (possibleName.length < 3) {
-                                    possibleName = line.replace(rawPhone, '').replace(/[^\w\sÀ-ÿ]/g, '').trim();
-                                }
-
-                                const name = possibleName.length > 2 ? possibleName : `Importado ${cleanPhone.slice(-4)}`;
-
-                                newContacts.push({
-                                    id: Date.now() + Math.random(),
-                                    name: name,
-                                    phone: cleanPhone,
-                                    status: 'pendente'
-                                });
-                                seenPhones.add(cleanPhone);
-                                addedCount++;
-                            }
+                    if (dateMatches.length > 0) {
+                        // A Data de Nascimento é a ÚLTIMA data encontrada antes do telefone
+                        const dobMatch = dateMatches[dateMatches.length - 1];
+                        const dobIndex = dobMatch.index;
+                        
+                        // O nome está imediatamente antes da Data de Nascimento
+                        // Pegamos o trecho antes da data e limpamos
+                        let rawNameSegment = textBefore.substring(0, dobIndex).trim();
+                        
+                        // O relatório tem o CGM (números) antes do nome. 
+                        // Vamos pegar apenas a parte de texto final desse segmento.
+                        // Ex: " ... 1005047621 ADRIAN FELIPE ..." -> Queremos "ADRIAN FELIPE ..."
+                        
+                        // Remove tudo que não for letra ou espaço do final para o começo até encontrar um número
+                        // Ou mais simples: Split por números e pegar o último pedaço
+                        const nameParts = rawNameSegment.split(/[0-9]+/);
+                        if (nameParts.length > 0) {
+                            extractedName = nameParts[nameParts.length - 1].trim();
                         }
                     }
-                });
+
+                    // Limpeza final do nome (remove aspas, virgulas residuais do CSV/PDF se houver)
+                    extractedName = extractedName.replace(/[^a-zA-Z\u00C0-\u00FF\s]/g, '').trim();
+
+                    // Validação final
+                    const cleanPhone = rawPhone.replace(/\D/g, '');
+                    
+                    if (extractedName.length > 2 && !seenPhones.has(cleanPhone)) {
+                        newContacts.push({
+                            id: Date.now() + Math.random(),
+                            name: extractedName,
+                            phone: cleanPhone,
+                            status: 'pendente'
+                        });
+                        seenPhones.add(cleanPhone);
+                        addedCount++;
+                    }
+                }
 
                 if (addedCount > 0) {
                     setContacts(prev => [...prev, ...newContacts]);
-                    alert(`Sucesso! ${addedCount} novos contatos filtrados e importados.`);
+                    alert(`Sucesso! ${addedCount} novos alunos importados (ativos).`);
                 } else {
-                    alert("Nenhum contato válido encontrado (verifique se foram filtrados por situação).");
+                    alert("Nenhum aluno ativo com telefone encontrado. Verifique se o PDF segue o padrão SEED.");
                 }
             };
 
