@@ -88,7 +88,9 @@
             Pause: <React.Fragment><rect x="6" y="4" width="4" height="16" /><rect x="14" y="4" width="4" height="16" /></React.Fragment>,
             Loader2: <path d="M21 12a9 9 0 1 1-6.219-8.56" />,
             FileText: <React.Fragment><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /><polyline points="10 9 9 9 8 9" /></React.Fragment>,
-            Search: <React.Fragment><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></React.Fragment>
+            Search: <React.Fragment><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></React.Fragment>,
+            Lock: <React.Fragment><rect x="3" y="11" width="18" height="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></React.Fragment>,
+            LogOut: <React.Fragment><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></React.Fragment>
         };
 
         const Icon = ({ name, size = 20, className = "" }) => {
@@ -112,9 +114,84 @@
             );
         };
 
+        // --- TELA DE LOGIN ---
+        const LoginScreen = ({ onLogin }) => {
+            const [user, setUser] = useState('');
+            const [pass, setPass] = useState('');
+            const [error, setError] = useState('');
+
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                // --- CONFIGURAÇÃO DE USUÁRIO E SENHA ---
+                // Você pode alterar estas strings para mudar o login
+                if (user === 'admin' && pass === 'secantoide') {
+                    onLogin();
+                } else {
+                    setError('Usuário ou senha incorretos');
+                    setPass('');
+                }
+            };
+
+            return (
+                <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
+                    <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md border border-gray-100">
+                        <div className="flex flex-col items-center mb-6">
+                            <div className="bg-emerald-100 p-3 rounded-full mb-3 text-emerald-600">
+                                <Icon name="Lock" size={32} />
+                            </div>
+                            <h2 className="text-2xl font-bold text-gray-800">Acesso Restrito</h2>
+                            <p className="text-sm text-gray-500 text-center">ZapManager - Colégio Pres. Roosevelt</p>
+                        </div>
+
+                        {error && (
+                            <div className="mb-4 p-3 bg-red-50 text-red-700 text-sm rounded-lg flex items-center gap-2 border border-red-100">
+                                <Icon name="AlertCircle" size={16} /> {error}
+                            </div>
+                        )}
+
+                        <form onSubmit={handleSubmit} className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Usuário</label>
+                                <input 
+                                    type="text" 
+                                    value={user}
+                                    onChange={(e) => setUser(e.target.value)}
+                                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none"
+                                    placeholder="Digite seu usuário"
+                                    autoFocus
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Senha</label>
+                                <input 
+                                    type="password" 
+                                    value={pass}
+                                    onChange={(e) => setPass(e.target.value)}
+                                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none"
+                                    placeholder="••••••"
+                                />
+                            </div>
+                            <button 
+                                type="submit" 
+                                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-lg transition shadow-sm"
+                            >
+                                Entrar no Sistema
+                            </button>
+                        </form>
+                        <p className="mt-6 text-xs text-center text-gray-400">
+                            Versão Segura v1.2
+                        </p>
+                    </div>
+                </div>
+            );
+        };
+
         // --- APLICAÇÃO PRINCIPAL ---
 
         function App() {
+            // Estado de Autenticação
+            const [isAuthenticated, setIsAuthenticated] = useState(false);
+            
             const [activeTab, setActiveTab] = useState('single');
             const [phone, setPhone] = useState('');
             const [message, setMessage] = useState('');
@@ -129,8 +206,15 @@
             const [isAutoSending, setIsAutoSending] = useState(false);
             const fileInputRef = useRef(null);
 
+            // Verificar Login Salvo
+            useEffect(() => {
+                const savedAuth = localStorage.getItem('wa_auth_token');
+                if (savedAuth === 'authenticated') {
+                    setIsAuthenticated(true);
+                }
+            }, []);
+
             // Carregar e Salvar Dados
-            // Isto garante que os dados fiquem salvos no navegador (LocalStorage)
             useEffect(() => {
                 const savedContacts = localStorage.getItem('wa_contacts');
                 if (savedContacts) setContacts(JSON.parse(savedContacts));
@@ -139,6 +223,19 @@
             useEffect(() => {
                 localStorage.setItem('wa_contacts', JSON.stringify(contacts));
             }, [contacts]);
+
+            // --- LÓGICA DE LOGIN/LOGOUT ---
+            const handleLoginSuccess = () => {
+                setIsAuthenticated(true);
+                localStorage.setItem('wa_auth_token', 'authenticated');
+            };
+
+            const handleLogout = () => {
+                if(confirm("Deseja realmente sair?")) {
+                    setIsAuthenticated(false);
+                    localStorage.removeItem('wa_auth_token');
+                }
+            };
 
             // --- LÓGICA DE ENVIO AUTOMÁTICO ---
             useEffect(() => {
@@ -284,11 +381,6 @@
             };
 
             const prepareCampaign = () => {
-                // Usa filteredContacts para permitir criar campanha apenas com a busca atual se desejar, 
-                // ou use 'contacts' para todos. Normalmente em massa é com todos, mas filtro é útil.
-                // Vamos usar 'filteredContacts' para dar poder ao usuário de filtrar quem ele quer enviar.
-                // Se não tiver busca, filteredContacts == contacts.
-                
                 const targets = searchTerm ? filteredContacts : contacts;
 
                 if (targets.length === 0) return alert('Nenhum contato na lista (ou no filtro) para enviar.');
@@ -312,17 +404,32 @@
                 setCampaignQueue(q => q.map(i => i.id === id ? { ...i, sent: true } : i));
             };
 
+            // SE NÃO ESTIVER LOGADO, MOSTRA TELA DE LOGIN
+            if (!isAuthenticated) {
+                return <LoginScreen onLogin={handleLoginSuccess} />;
+            }
+
+            // SE ESTIVER LOGADO, MOSTRA O APP
             return (
                 <div className="min-h-screen bg-gray-50 pb-10">
                     <header className="bg-emerald-600 text-white p-4 shadow-lg sticky top-0 z-50">
                         <div className="container mx-auto flex items-center justify-between">
                             <div className="flex items-center gap-2">
                                 <Icon name="MessageSquare" size={24} />
-                                <h1 className="text-xl font-bold md:block hidden"> Mensageiro- Colégio Pres. Roosevelt</h1>
+                                <h1 className="text-xl font-bold md:block hidden">ZapManager - Colégio Pres. Roosevelt</h1>
                                 <h1 className="text-xl font-bold md:hidden">ZapManager</h1>
                             </div>
-                            <div className="text-xs bg-emerald-700 px-3 py-1 rounded-full flex items-center gap-1 font-medium">
-                                <Icon name="CheckCircle" size={12} /> Online & Salvo
+                            <div className="flex items-center gap-3">
+                                <div className="text-xs bg-emerald-700 px-3 py-1 rounded-full flex items-center gap-1 font-medium">
+                                    <Icon name="CheckCircle" size={12} /> Online & Salvo
+                                </div>
+                                <button 
+                                    onClick={handleLogout}
+                                    className="bg-emerald-800 hover:bg-emerald-900 p-2 rounded text-white flex items-center gap-1 text-xs transition"
+                                    title="Sair do Sistema"
+                                >
+                                    <Icon name="LogOut" size={14} /> Sair
+                                </button>
                             </div>
                         </div>
                     </header>
