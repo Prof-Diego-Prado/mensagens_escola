@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title> Gestão de mensagens - Colégio Presidente Roosevelt</title>
+    <title>Gestão de Mensagens - Colégio Presidente Roosevelt</title>
     
     <!-- React & ReactDOM -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -36,7 +36,7 @@
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
 
-        // --- BIBLIOTECA DE ÍCONES (SVG Inline para evitar dependências externas) ---
+        // --- BIBLIOTECA DE ÍCONES (SVG Inline) ---
         const Icons = {
             MessageSquare: <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />,
             CheckCircle: <><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" /></>,
@@ -51,6 +51,7 @@
             X: <><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></>,
             Settings: <><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" /></>,
             Play: <polygon points="5 3 19 12 5 21 5 3" />,
+            Pause: <rect x="6" y="4" width="4" height="16" /><rect x="14" y="4" width="4" height="16" />,
             Loader2: <path d="M21 12a9 9 0 1 1-6.219-8.56" />,
             FileText: <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /><polyline points="10 9 9 9 8 9" /></>
         };
@@ -89,6 +90,7 @@
             const [newContactPhone, setNewContactPhone] = useState('');
 
             const [isImporting, setIsImporting] = useState(false);
+            const [isAutoSending, setIsAutoSending] = useState(false);
             const fileInputRef = useRef(null);
 
             // Carregar e Salvar Dados
@@ -100,6 +102,36 @@
             useEffect(() => {
                 localStorage.setItem('wa_contacts', JSON.stringify(contacts));
             }, [contacts]);
+
+            // --- LÓGICA DE ENVIO AUTOMÁTICO ---
+            useEffect(() => {
+                let interval;
+                if (isAutoSending) {
+                    interval = setInterval(() => {
+                        // Encontra o primeiro não enviado
+                        const nextItem = campaignQueue.find(item => !item.sent);
+                        
+                        if (nextItem) {
+                            // Abre a janela
+                            const win = window.open(nextItem.link, '_blank');
+                            
+                            // Verifica se foi bloqueado
+                            if (win) {
+                                // Marca como enviado
+                                markAsSent(nextItem.id);
+                            } else {
+                                setIsAutoSending(false);
+                                alert("Pop-ups bloqueados! Por favor, permita pop-ups para este site na barra de endereço para usar o envio automático.");
+                            }
+                        } else {
+                            // Acabou a fila
+                            setIsAutoSending(false);
+                            alert("Envio automático concluído!");
+                        }
+                    }, 3000); // 3 segundos de intervalo
+                }
+                return () => clearInterval(interval);
+            }, [isAutoSending, campaignQueue]);
 
             const formatPhone = (input) => input.replace(/\D/g, '');
 
@@ -148,32 +180,53 @@
             };
 
             const processExtractedText = (text) => {
-                const rawNumbers = text.match(/[\d\+\-\(\)\s]{10,}/g) || [];
+                // Separa por linhas para tentar achar nomes associados
+                const lines = text.split('\n');
                 let addedCount = 0;
                 const newContacts = [];
                 const seenPhones = new Set(contacts.map(c => c.phone));
 
-                rawNumbers.forEach(raw => {
-                    const clean = raw.replace(/\D/g, '');
-                    if (clean.length >= 10 && clean.length <= 13) {
-                        if (!seenPhones.has(clean)) {
-                            newContacts.push({
-                                id: Date.now() + Math.random(),
-                                name: `Importado ${clean.slice(-4)}`,
-                                phone: clean,
-                                status: 'pendente'
-                            });
-                            seenPhones.add(clean);
-                            addedCount++;
+                lines.forEach(line => {
+                    // Tenta achar um telefone na linha
+                    // Regex flexível para: (XX) XXXX-XXXX, XX XXXXX XXXX, +55...
+                    const phoneMatch = line.match(/[\d\+\-\(\)\s]{10,}/);
+                    
+                    if (phoneMatch) {
+                        const rawPhone = phoneMatch[0];
+                        const cleanPhone = rawPhone.replace(/\D/g, '');
+
+                        // Validação básica BR (10 a 13 digitos)
+                        if (cleanPhone.length >= 10 && cleanPhone.length <= 13) {
+                            if (!seenPhones.has(cleanPhone)) {
+                                
+                                // TENTA EXTRAIR O NOME
+                                // Remove o telefone da linha, o que sobrar é provavelmente o nome
+                                let possibleName = line.replace(rawPhone, '').trim();
+                                
+                                // Limpa caracteres estranhos que sobram de PDFs
+                                possibleName = possibleName.replace(/[^\w\sÀ-ÿ]/g, '').trim();
+                                
+                                // Se o nome for muito curto, usa um genérico
+                                const name = possibleName.length > 2 ? possibleName : `Importado ${cleanPhone.slice(-4)}`;
+
+                                newContacts.push({
+                                    id: Date.now() + Math.random(),
+                                    name: name,
+                                    phone: cleanPhone,
+                                    status: 'pendente'
+                                });
+                                seenPhones.add(cleanPhone);
+                                addedCount++;
+                            }
                         }
                     }
                 });
 
                 if (addedCount > 0) {
                     setContacts(prev => [...prev, ...newContacts]);
-                    alert(`Sucesso! ${addedCount} novos números encontrados.`);
+                    alert(`Sucesso! ${addedCount} novos contatos importados com nomes (quando encontrados).`);
                 } else {
-                    alert("Nenhum número novo válido encontrado.");
+                    alert("Nenhum número novo válido encontrado. Verifique se o PDF contém números de telefone visíveis.");
                 }
             };
 
@@ -216,6 +269,7 @@
                     };
                 });
                 setCampaignQueue(queue);
+                setIsAutoSending(false); // Reseta estado de envio ao criar nova fila
                 alert(`Fila gerada com ${queue.length} mensagens!`);
             };
 
@@ -229,7 +283,8 @@
                         <div className="container mx-auto flex items-center justify-between">
                             <div className="flex items-center gap-2">
                                 <Icon name="MessageSquare" size={24} />
-                                <h1 className="text-xl font-bold">Mensageiro - Colégio Roosevelt</h1>
+                                <h1 className="text-xl font-bold md:block hidden">ZapManager - Colégio Pres. Roosevelt</h1>
+                                <h1 className="text-xl font-bold md:hidden">ZapManager</h1>
                             </div>
                             <div className="text-xs bg-emerald-700 px-3 py-1 rounded-full flex items-center gap-1 font-medium">
                                 <Icon name="CheckCircle" size={12} /> Online
@@ -350,9 +405,25 @@
 
                                     {/* FILA DE DISPARO */}
                                     <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 flex flex-col h-full">
-                                        <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
-                                            <Icon name="Play" className="text-emerald-500" size={20} /> Fila de Disparo
-                                        </h2>
+                                        <div className="flex justify-between items-center mb-4">
+                                            <h2 className="text-xl font-bold flex items-center gap-2">
+                                                <Icon name="Play" className="text-emerald-500" size={20} /> Fila de Disparo
+                                            </h2>
+
+                                            {/* CONTROLE DE DISPARO AUTOMÁTICO */}
+                                            {campaignQueue.length > 0 && (
+                                                <button 
+                                                    onClick={() => setIsAutoSending(!isAutoSending)}
+                                                    className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1 transition ${isAutoSending ? 'bg-red-100 text-red-600 animate-pulse' : 'bg-green-100 text-green-700 hover:bg-green-200'}`}
+                                                >
+                                                    {isAutoSending ? (
+                                                        <><Icon name="Pause" size={12} /> Parar Automático</>
+                                                    ) : (
+                                                        <><Icon name="Play" size={12} /> Iniciar Automático (3s)</>
+                                                    )}
+                                                </button>
+                                            )}
+                                        </div>
                                         
                                         {campaignQueue.length === 0 ? (
                                             <div className="flex-1 flex flex-col items-center justify-center text-gray-400 border-2 border-dashed rounded-lg p-8 bg-gray-50">
@@ -361,6 +432,11 @@
                                             </div>
                                         ) : (
                                             <div className="flex-1 overflow-y-auto space-y-3 pr-1">
+                                                <div className="mb-2 flex justify-between items-center text-xs text-gray-500">
+                                                    <span>Progresso: {campaignQueue.filter(i => i.sent).length} / {campaignQueue.length}</span>
+                                                    {isAutoSending && <span className="text-emerald-600 font-bold">Enviando...</span>}
+                                                </div>
+
                                                 {campaignQueue.map((item, index) => (
                                                     <div key={item.id} className={`p-4 rounded-lg border flex flex-col gap-2 ${item.sent ? 'bg-green-50 border-green-200 opacity-70' : 'bg-white border-gray-200 shadow-sm'}`}>
                                                         <div className="flex justify-between items-start">
@@ -378,7 +454,11 @@
                                                             )}
                                                         </div>
                                                         {!item.sent && (
-                                                            <button onClick={() => { window.open(item.link, '_blank'); markAsSent(item.id); }} className="mt-1 w-full bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-bold py-2 rounded flex items-center justify-center gap-2">
+                                                            <button 
+                                                                onClick={() => { window.open(item.link, '_blank'); markAsSent(item.id); }} 
+                                                                className="mt-1 w-full bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-bold py-2 rounded flex items-center justify-center gap-2"
+                                                                disabled={isAutoSending} // Desabilita clique manual durante automático para evitar duplicidade
+                                                            >
                                                                 <Icon name="Send" size={12} /> Enviar
                                                             </button>
                                                         )}
