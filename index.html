@@ -124,7 +124,7 @@
                 e.preventDefault();
                 // --- CONFIGURAÇÃO DE USUÁRIO E SENHA ---
                 // Você pode alterar estas strings para mudar o login
-                if (user === 'admin' && pass === 'secantoide') {
+                if (user === 'admin' && pass === '1234') {
                     onLogin();
                 } else {
                     setError('Usuário ou senha incorretos');
@@ -323,15 +323,49 @@
                 const seenPhones = new Set(contacts.map(c => c.phone));
 
                 lines.forEach(line => {
+                    // 1. Filtro de Situação: Excluir Transferido ou Remanejado
+                    if (line.match(/transferido|remanejado/i)) {
+                        return; // Ignora esta linha
+                    }
+
+                    // 2. Busca Telefone na linha
                     const phoneMatch = line.match(/[\d\+\-\(\)\s]{10,}/);
+                    
                     if (phoneMatch) {
                         const rawPhone = phoneMatch[0];
                         const cleanPhone = rawPhone.replace(/\D/g, '');
 
                         if (cleanPhone.length >= 10 && cleanPhone.length <= 13) {
                             if (!seenPhones.has(cleanPhone)) {
-                                let possibleName = line.replace(rawPhone, '').trim();
-                                possibleName = possibleName.replace(/[^\w\sÀ-ÿ]/g, '').trim();
+                                
+                                // 3. Extração Inteligente do Nome
+                                // Estrutura: [CGM] [Nome] [Data Nasc] [Idade] [Sexo] [Telefone] ...
+                                
+                                let possibleName = "";
+
+                                // Pega tudo que está à ESQUERDA do telefone encontrado
+                                const leftSide = line.substring(0, line.indexOf(rawPhone));
+                                
+                                // Divide pela Data de Nascimento (Formato DD/MM/AAAA)
+                                // O nome deve ser a parte antes da data
+                                const parts = leftSide.split(/\d{2}\/\d{2}\/\d{4}/);
+                                
+                                if (parts.length > 0) {
+                                    // Pega a primeira parte (Antes da data)
+                                    let namePart = parts[0];
+                                    
+                                    // Remove o N. CGM (números no início da linha)
+                                    possibleName = namePart.replace(/^\d+/, '').trim();
+                                    
+                                    // Limpeza final de caracteres especiais
+                                    possibleName = possibleName.replace(/[^\w\sÀ-ÿ]/g, '').trim();
+                                }
+
+                                // Fallback: Se a extração falhou (nome vazio), usa lógica antiga
+                                if (possibleName.length < 3) {
+                                    possibleName = line.replace(rawPhone, '').replace(/[^\w\sÀ-ÿ]/g, '').trim();
+                                }
+
                                 const name = possibleName.length > 2 ? possibleName : `Importado ${cleanPhone.slice(-4)}`;
 
                                 newContacts.push({
@@ -349,9 +383,9 @@
 
                 if (addedCount > 0) {
                     setContacts(prev => [...prev, ...newContacts]);
-                    alert(`Sucesso! ${addedCount} novos contatos salvos no sistema.`);
+                    alert(`Sucesso! ${addedCount} novos contatos filtrados e importados.`);
                 } else {
-                    alert("Nenhum número novo válido encontrado.");
+                    alert("Nenhum contato válido encontrado (verifique se foram filtrados por situação).");
                 }
             };
 
